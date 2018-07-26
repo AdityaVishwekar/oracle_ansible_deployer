@@ -1,0 +1,274 @@
+---
+- name: Step 001 Deploy Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - "{{ANSIBLE_REPO_PATH}}/configs/{{ env_type }}/env_vars.yml"
+    - "{{ANSIBLE_REPO_PATH}}/configs/{{ env_type }}/env_secret_vars.yml"
+  tags:
+    - step001
+    - deploy_infrastructure
+  vars: 
+    email: a101@gmail.com
+    repo_method: file # Other Options are: file, satellite and rhn
+    update_packages: false
+    guid: defaultguid
+
+    project_tag: "{{ env_type }}-{{ guid }}"
+
+    deploy_local_ssh_config_location: "{{ANSIBLE_REPO_PATH}}/workdir"
+
+    install_bastion: true
+    install_common: true
+    software_to_deploy: none
+
+    repo_version: "3.6"
+
+    ### If you want a Key Pair name created and injected into the hosts,
+    # set `set_env_authorized_key` to true and set the keyname in `env_authorized_key`
+    # you can use the key used to create the environment or use your own self generated key
+    # if you set "use_own_key" to false your PRIVATE key will be copied to the bastion. (This is {{key_name}})
+    use_own_key: true
+    env_authorized_key: "{{guid}}key"
+    ansible_ssh_private_key_file: ~/.ssh/{{key_name}}.pem
+    set_env_authorized_key: true
+
+    # Is this running from Red Hat Ansible Tower
+    tower_run: false
+    ### Azure 
+
+    # Create a dedicated resourceGroup for this deployment
+    az_destroy_method: resource_group
+    az_resource_group: "{{ project_tag }}"
+
+    # you can operate differently: if you share on resourceGroup for all you deployments,
+    # you can specify a different resourceGroup and method:
+    #az_destroy_method: deployment
+    #az_resource_group: my-shared-resource-group
+
+    ### AWS EC2 Environment settings
+
+    ### Route 53 Zone ID (AWS)
+    # This is the Route53 HostedZoneId where you will create your Public DNS entries
+    # This only needs to be defined if your CF template uses route53
+    HostedZoneId: Z3IHLWJZOU9SRT
+    # The region to be used, if not specified by -e in the command line
+    aws_region: ap-southeast-2
+    # The key that is used to
+    key_name: "default_key_name"
+
+    ## Networking (AWS)
+    subdomain_base_short: "{{ guid }}"
+    subdomain_base_suffix: ".example.opentlc.com"
+    subdomain_base: "{{subdomain_base_short}}{{subdomain_base_suffix}}"
+
+    ## Environment Sizing
+
+    bastion_instance_type: "t2.medium"
+
+    frontend_instance_type: "t2.small"
+    app_instance_type: "{{frontend_instance_type}}"
+    appdb_instance_type: "{{frontend_instance_type}}"
+    support_instance_type: "t2.small"
+
+    frontend_instance_count: 1
+    app_instance_count: 2
+    appdb_instance_count: 1
+    support_instance_count: 1
+    rootfs_size_bastion: 50
+    instances: 
+      - name: "bastion"
+        exact_count: 1
+        flavor: 
+          oci: "VM.Standard2.1"
+        hostname: "bastion"
+        instance_image: "ocid1.image.oc1.iad.aaaaaaaamdw6vims4gjsayfnjr23tpgixkylc7sjedlzwfznxmny6enpgvfq"
+        tag_namespace: { Application: Bastion }
+        instance_ad: "APRD:US-ASHBURN-AD-2"
+      - name: "frontend"
+        exact_count: 1
+        flavor: 
+          oci: "VM.Standard2.1"
+        hostname: "frontend"
+        instance_image: "ocid1.image.oc1.iad.aaaaaaaamdw6vims4gjsayfnjr23tpgixkylc7sjedlzwfznxmny6enpgvfq"
+        tag_namespace: { Application: Frontend }
+        instance_ad: "APRD:US-ASHBURN-AD-2"
+      - name: "app"
+        exact_count: "{{app_instance_count}}"
+        public_dns: true
+        flavor:
+          ec2: "{{app_instance_type}}"
+          azure: "Standard_A2_V2"
+          oci: "VM.Standard2.1"
+        tags:
+          - key: "AnsibleGroup"
+            value: "apps"
+          - key: "ostype"
+            value: "centOS"
+          - key: "instance_filter"
+            value: "{{ env_type }}-{{ email }}"
+        key_name: "{{key_name}}"
+        instance_image: "ocid1.image.oc1.iad.aaaaaaaa5o7kjzy7gqtmu5pxuhnh6yoi3kmzazlk65trhpjx5xg3hfbuqvgq"
+        tag_namespace: { Application: App1 }
+        instance_ad: "APRD:US-ASHBURN-AD-2"
+      - name: "appdb"
+        exact_count: "{{appdb_instance_count}}"
+        public_dns: true
+        flavor:
+          ec2: "{{appdb_instance_type}}"
+          azure: "Standard_A2_V2"
+          oci: "VM.Standard2.1"
+        tags:
+          - key: "AnsibleGroup"
+            value: "appdbs"
+          - key: "ostype"
+            value: "centOS"
+          - key: "instance_filter"
+            value: "{{ env_type }}-{{ email }}"
+        key_name: "{{key_name}}"
+        instance_image: "ocid1.image.oc1.iad.aaaaaaaa5o7kjzy7gqtmu5pxuhnh6yoi3kmzazlk65trhpjx5xg3hfbuqvgq"
+        tag_namespace: { Application: App1 }
+        instance_ad: "APRD:US-ASHBURN-AD-2"
+      - name: "support"
+        exact_count: "{{support_instance_count}}"
+        public_dns: true
+        flavor:
+          ec2: "{{support_instance_type}}"
+          azure: "Standard_A2_V2"
+          oci: "VM.Standard2.1"
+        tags:
+          - key: "AnsibleGroup"
+            value: "support"
+          - key: "ostype"
+            value: "centOS"
+          - key: "instance_filter"
+            value: "{{ env_type }}-{{ email }}"
+        key_name: "{{key_name}}"
+        instance_image: "ocid1.image.oc1.iad.aaaaaaaa5o7kjzy7gqtmu5pxuhnh6yoi3kmzazlk65trhpjx5xg3hfbuqvgq"
+        tag_namespace: { Application: App1 }
+        instance_ad: "APRD:US-ASHBURN-AD-2"
+
+
+
+    ansible_ssh_user: ec2-user
+    remote_user: ec2-user
+
+    common_packages:
+      - python
+      - unzip
+      - bash-completion
+      - tmux
+      - bind-utils
+      - wget
+      - git
+      - vim-enhanced
+      - at
+      - ansible
+
+    rhel_repos:
+      - rhel-7-server-rpms
+      - rhel-7-server-extras-rpms
+      - epel-release-latest-7
+
+    create_internal_dns_entries: true
+    zone_internal_dns: "{{guid}}.internal."
+    chomped_zone_internal_dns: "{{guid}}.internal"
+    zone_public_dns: "{{subdomain_base}}."
+    frontend_public_dns: "frontendlb.{{subdomain_base}}."
+    #tower_public_dns: "tower.{{subdomain_base}}."
+    bastion_public_dns: "bastion.{{subdomain_base}}."
+    bastion_public_dns_chomped: "bastion.{{subdomain_base}}"
+    vpcid_cidr_block: "192.168.0.0/16"
+    vpcid_name_tag: "{{subdomain_base}}"
+
+    az_1_name: "{{ aws_region }}a"
+    az_2_name: "{{ aws_region }}b"
+
+    subnet_private_1_cidr_block: "192.168.2.0/24"
+    subnet_private_1_az: "{{ az_2_name }}"
+    subnet_private_1_name_tag: "{{subdomain_base}}-private"
+
+    subnet_private_2_cidr_block: "192.168.1.0/24"
+    subnet_private_2_az: "{{ az_1_name }}"
+    subnet_private_2_name_tag: "{{subdomain_base}}-private"
+
+    subnet_public_1_cidr_block: "192.168.10.0/24"
+    subnet_public_1_az: "{{ az_1_name }}"
+    subnet_public_1_name_tag: "{{subdomain_base}}-public"
+
+    subnet_public_2_cidr_block: "192.168.20.0/24"
+    subnet_public_2_az: "{{ az_2_name }}"
+    subnet_public_2_name_tag: "{{subdomain_base}}-public"
+
+    dopt_domain_name: "{{ aws_region }}.compute.internal"
+
+    rtb_public_name_tag: "{{subdomain_base}}-public"
+    rtb_private_name_tag: "{{subdomain_base}}-private"
+
+
+    cf_template_description: "{{ env_type }}-{{ guid }} Ansible Agnostic Deployer "
+
+    quad_zero_route: "0.0.0.0/0"
+    TCP_protocol: "6"
+    SSH_port: "22"
+
+    vcn_name: "mytestvcn"
+    vcn_cidr_block: "10.0.0.0/16"
+    # vcn_cidr_block: "192.168.0.0/16"
+    vcn_dns_label: "mytestvcn"
+
+    ig_name: "myinternetgatewayformytestvcn"
+
+    route_table_name: "myroutetable"
+    # route all internet access to our Internet Gateway
+    route_table_rules:
+      - cidr_block: "{{ quad_zero_route }}"
+        network_entity_id: "{{ ig_id }}"
+
+
+    subnet_cidr: "10.0.0.48/28"
+    # subnet_cidr: "192.168.10.0/24"
+    subnet_name: "mytestsubnet"
+    subnet_dns_label: "mytestsubnet"
+
+    securitylist_name: "mysecuritylist"
+
+    instance_shape: "VM.Standard1.1"
+    #instance_hostname: "mytestinstance"
+
+    instance_ad: "APRD:US-ASHBURN-AD-2"
+    # instance_ad2: "APRD:US-ASHBURN-AD-3"
+    instance_compartment: "ocid1.compartment.oc1..aaaaaaaauzjrwrpfptnkpb46ifs6gv7rwsywqpkth7tz54n7ek27upc7iwha"
+    # provide an "OEL" image
+    #instance_image: "ocid1.image.oc1.iad.aaaaaaaamdw6vims4gjsayfnjr23tpgixkylc7sjedlzwfznxmny6enpgvfq"
+
+  tasks:
+    - import_tasks: oci_ssh_config_setup.yml
+    - name: Deploy OCI Infrastructure
+      oci_instance:
+        force_create: yes
+        availability_domain: "{{ item.instance_ad }}"
+        compartment_id: "{{ instance_compartment }}"
+        name: "{{ item.name }}"
+        image_id: "{{ item.instance_image }}"
+        vnic:
+            assign_public_ip: True
+            #hostname_label: "{{ item.hostname }}"
+            subnet_id: "{{ instance_subnet_id }}"
+        metadata:
+            ssh_authorized_keys: "{{ lookup('file',  my_test_public_key ) }}"
+        shape: "{{ item.flavor.oci }}"
+        defined_tags:
+          TagNamespace1: "{{ item.tag_namespace }}"
+        exact_count: "{{ item.exact_count }}"
+        count_tag:
+          TagNamespace1: "{{ item.tag_namespace }}"
+      with_items: 
+        # - "{{ instances[0] }}"
+        # - "{{ instances[1] }}"
+        #- "{{ instances[2] }}"
+        # - "{{ instances[3] }}"
+        - "{{ instances[4] }}"
+      register: result
